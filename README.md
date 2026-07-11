@@ -1,8 +1,8 @@
 # Chrome AI
 
-Call Chrome's built-in AI APIs (Gemini Nano) from Node.js — no manual browser interaction.
+Call Chrome's built-in AI APIs (Gemini Nano) from Node.js.
 
-Uses [agent-browser](https://github.com/potatosalad/agent-browser) under the hood to bridge between Node.js and Chrome's `globalThis.LanguageModel` API.
+Chrome's AI APIs only run inside browser pages — no CLI, no REST API. chrome-ai bridges that gap: a local HTTP server + a bridge page you open once in Chrome.
 
 ## Install
 
@@ -10,69 +10,51 @@ Uses [agent-browser](https://github.com/potatosalad/agent-browser) under the hoo
 npm install chrome-ai
 ```
 
-Requires: `agent-browser` (`brew install agent-browser`) and recent desktop Chrome.
+No other dependencies. Just Chrome.
 
 ## Usage
 
 ```js
-import { prompt, summarize, translate } from 'chrome-ai';
+import { prompt } from 'chrome-ai';
 
-// Prompt API
-const answer = await prompt({ system: 'You are helpful.', user: 'Hello!' });
+// First call prints the bridge URL to stderr.
+// Open that URL in Chrome and keep the tab open.
 
-// Summarizer API
-const summary = await summarize({ text: longArticle, type: 'key-points' });
+const answer = await prompt({
+  system: 'You are helpful.',
+  user: 'What is the capital of France?',
+});
+console.log(answer); // "Paris."
+```
 
-// Translator API
-const spanish = await translate({ text: 'Hello world', targetLanguage: 'es' });
+## How it works
 
-// Writer API
-const draft = await write({ prompt: 'Write a short poem about AI', tone: 'informal' });
+```
+Node.js                 Server (localhost)        Chrome (bridge page)
+  │                         │                         │
+  ├─ POST /prompt ─────────▶│                         │
+  │                         │◀── GET /pending ────────┤ (polls every 500ms)
+  │                         │── [{id, system, user}]─▶│
+  │                         │                         │ calls LanguageModel API
+  │                         │◀── POST /result/{id} ───┤
+  │◀─ GET /result/{id} ────│                         │
+  │                         │                         │
 ```
 
 ## API
 
 ### `prompt(opts)`
+
 | Option | Type | Default |
 |--------|------|---------|
 | `system` | string | `''` |
 | `user` | string | *required* |
 
-### `summarize(opts)`
-| Option | Type | Default |
-|--------|------|---------|
-| `text` | string | *required* |
-| `type` | `'key-points'` \| `'tl;dr'` \| `'teaser'` \| `'headline'` | `'key-points'` |
-| `format` | `'plain-text'` \| `'markdown'` | `'plain-text'` |
-| `length` | `'short'` \| `'medium'` \| `'long'` | `'medium'` |
-
-### `translate(opts)`
-| Option | Type | Default |
-|--------|------|---------|
-| `text` | string | *required* |
-| `sourceLanguage` | string | `'en'` |
-| `targetLanguage` | string | `'es'` |
-
-### `write(opts)`
-| Option | Type | Default |
-|--------|------|---------|
-| `prompt` | string | *required* |
-| `tone` | `'neutral'` \| `'formal'` \| `'informal'` | `'neutral'` |
-| `format` | `'plain-text'` \| `'markdown'` | `'plain-text'` |
-| `length` | `'short'` \| `'medium'` \| `'long'` | `'medium'` |
-
-## Latency
-
-First call in a session: 20–35s (model loading). Subsequent calls: 1–5s. Keep the Node process alive between calls.
-
-## Requirements
-
-- **agent-browser**: `brew install agent-browser`
-- **Chrome**: v129+ (Prompt API on by default)
+More APIs (summarize, translate, write) coming soon.
 
 ## Also a Pi Skill
 
-This repo also contains a [SKILL.md](SKILL.md) for use with [Pi coding agent](https://github.com/earendil-works/pi-coding-agent) via `skills.sh`:
+This repo contains a [SKILL.md](SKILL.md) for use with [Pi coding agent](https://github.com/earendil-works/pi-coding-agent):
 
 ```bash
 skills.sh install donpark/chrome-ai

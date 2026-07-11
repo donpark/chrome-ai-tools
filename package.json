@@ -1,7 +1,7 @@
 {
   "name": "chrome-ai",
   "version": "0.1.0",
-  "description": "Call Chrome's built-in AI APIs (Gemini Nano) from Node.js via agent-browser",
+  "description": "Call Chrome's built-in AI APIs (Gemini Nano) from Node.js",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,13 +18,10 @@
     "prepublishOnly": "tsc"
   },
   "repository": "github:donpark/chrome-ai",
-  "keywords": ["chrome", "gemini", "gemini-nano", "ai", "prompt-api", "language-model", "agent-browser"],
+  "keywords": ["chrome", "gemini", "gemini-nano", "ai", "prompt-api", "language-model"],
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22",
     "typescript": "^5"
-  },
-  "peerDependencies": {
-    "agent-browser": "*"
   }
 }

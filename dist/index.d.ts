@@ -20,6 +20,6 @@ export interface WriteOptions {
     length?: 'short' | 'medium' | 'long';
 }
 export declare function prompt(opts: PromptOptions): Promise<string>;
-export declare function summarize(opts: SummarizeOptions): Promise<string>;
-export declare function translate(opts: TranslateOptions): Promise<string>;
-export declare function write(opts: WriteOptions): Promise<string>;
+export declare function summarize(_opts: SummarizeOptions): Promise<string>;
+export declare function translate(_opts: TranslateOptions): Promise<string>;
+export declare function write(_opts: WriteOptions): Promise<string>;

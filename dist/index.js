@@ -1,90 +1,59 @@
-import { execSync } from 'node:child_process';
-import { start, servePage, cleanupPage } from './server.js';
-const PAGE = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"></head>
-<body><pre id="r" style="white-space:pre-wrap;word-break:break-word">pending</pre>
-<script>
-(async()=>{
-const e=document.getElementById('r');
-try{
-const A='__API__';
-if(A==='prompt'){
- const a=globalThis.LanguageModel;
- if(!a){e.textContent='ERROR:no-prompt-api';return}
- const v=await a.availability({expectedInputs:[{type:'text',languages:['en']}],expectedOutputs:[{type:'text',languages:['en']}]});
- if(v==='unavailable'){e.textContent='ERROR:unavailable';return}
- e.textContent='running';
- const s=await a.create({initialPrompts:[{role:'system',content:__SYSTEM__}],expectedInputs:[{type:'text',languages:['en']}],expectedOutputs:[{type:'text',languages:['en']}]});
- try{const t=await s.prompt(__USER__);e.textContent='OK:\\n'+t}finally{if(s.destroy)s.destroy()}
-}else if(A==='summarize'){
- const a=globalThis.Summarizer;
- if(!a){e.textContent='ERROR:no-summarizer-api';return}
- const v=await a.availability();
- if(v==='unavailable'){e.textContent='ERROR:unavailable';return}
- e.textContent='running';
- const s=await a.create({type:__SUM_TYPE__,format:__FORMAT__,length:__LENGTH__});
- try{const t=await s.summarize(__USER__);e.textContent='OK:\\n'+t}finally{if(s.destroy)s.destroy()}
-}else if(A==='translate'){
- const a=globalThis.Translator;
- if(!a){e.textContent='ERROR:no-translator-api';return}
- const v=await a.availability();
- if(v==='unavailable'){e.textContent='ERROR:unavailable';return}
- e.textContent='running';
- const s=await a.create({sourceLanguage:__SOURCE_LANG__,targetLanguage:__TARGET_LANG__});
- try{const t=await s.translate(__USER__);e.textContent='OK:\\n'+t}finally{if(s.destroy)s.destroy()}
-}else if(A==='write'){
- const a=globalThis.Writer;
- if(!a){e.textContent='ERROR:no-writer-api';return}
- e.textContent='running';
- const s=await a.create({tone:__TONE__,format:__FORMAT__,length:__LENGTH__});
- try{const t=await s.write(__USER__);e.textContent='OK:\\n'+t}finally{if(s.destroy)s.destroy()}
+import { start as startServer, getPort } from './server.js';
+// ── internal ──────────────────────────────────────────────────
+const BASE = 'http://localhost';
+function ensureStarted() {
+    return startServer();
 }
-}catch(err){e.textContent='ERROR:'+err.message}
-})();
-</script></body></html>`;
-function ab(args, timeout = 60) {
-    return execSync(`agent-browser ${args.join(' ')}`, {
-        timeout: timeout * 1000,
-        encoding: 'utf-8',
-    }).trim();
-}
-async function callApi(type, opts = {}) {
-    await start();
-    const { system, user, text, type: sumType, format, length, sourceLanguage, targetLanguage, tone, } = opts;
-    const html = PAGE
-        .replaceAll('__API__', type)
-        .replace('__SYSTEM__', JSON.stringify(system ?? ''))
-        .replaceAll('__USER__', JSON.stringify(user ?? text ?? ''))
-        .replace('__SUM_TYPE__', JSON.stringify(sumType ?? 'key-points'))
-        .replaceAll('__FORMAT__', JSON.stringify(format ?? 'plain-text'))
-        .replaceAll('__LENGTH__', JSON.stringify(length ?? 'medium'))
-        .replace('__SOURCE_LANG__', JSON.stringify(sourceLanguage ?? 'en'))
-        .replace('__TARGET_LANG__', JSON.stringify(targetLanguage ?? 'es'))
-        .replace('__TONE__', JSON.stringify(tone ?? 'neutral'));
-    const { id, url } = servePage(html);
-    try {
-        ab(['open', url], 15);
-        ab(['wait', '35000'], 50);
-        const result = ab(['get', 'text', '#r'], 10);
-        if (result.startsWith('ERROR:'))
-            throw new Error(result.slice(6));
-        if (result.startsWith('OK:\n'))
-            return result.slice(4);
-        return result;
+async function fetchJSON(url, opts) {
+    const resp = await fetch(url, opts);
+    if (!resp.ok) {
+        const body = await resp.text().catch(() => '');
+        throw new Error(`${resp.status}: ${body || resp.statusText}`);
     }
-    finally {
-        cleanupPage(id);
+    return resp.json();
+}
+async function submitPrompt(system, user) {
+    const data = await fetchJSON(`${BASE}:${getPort()}/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system, user }),
+    });
+    return data.id;
+}
+async function waitForResult(id, timeoutMs = 120_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        const data = await fetchJSON(`${BASE}:${getPort()}/result/${id}`);
+        if (data.status === 'done')
+            return data.text;
+        if (data.status === 'error')
+            throw new Error(data.error || 'Unknown error');
+        // 202 = still pending, poll again
+        await new Promise((r) => setTimeout(r, 1000));
+    }
+    throw new Error(`Prompt ${id} timed out after ${timeoutMs}ms`);
+}
+// ── public API ────────────────────────────────────────────────
+let _started = false;
+async function lazyStart() {
+    if (!_started) {
+        await ensureStarted();
+        _started = true;
+        console.error(`Chrome AI bridge running at ${BASE}:${getPort()}`);
+        console.error('Open this URL in Chrome and keep the tab open.');
     }
 }
-export function prompt(opts) {
-    return callApi('prompt', opts);
+export async function prompt(opts) {
+    await lazyStart();
+    const id = await submitPrompt(opts.system ?? '', opts.user);
+    return waitForResult(id);
 }
-export function summarize(opts) {
-    return callApi('summarize', opts);
+export async function summarize(_opts) {
+    throw new Error('Summarizer not yet implemented via bridge pattern');
 }
-export function translate(opts) {
-    return callApi('translate', opts);
+export async function translate(_opts) {
+    throw new Error('Translator not yet implemented via bridge pattern');
 }
-export function write(opts) {
-    return callApi('write', opts);
+export async function write(_opts) {
+    throw new Error('Writer not yet implemented via bridge pattern');
 }
