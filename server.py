@@ -317,7 +317,7 @@ async function checkAPI() {
   } catch(e) { results.prompt = 'error: ' + e.message; }
   if (globalThis.Summarizer) {
     try {
-      results.summarizer = await globalThis.Summarizer.availability({expectedInputs:[{type:'text',languages:['en']}],expectedOutputs:[{type:'text',languages:['en']}]});
+      results.summarizer = await globalThis.Summarizer.availability({expectedInputLanguages:['en'],outputLanguage:'en'});
     } catch(e) { results.summarizer = 'error: ' + e.message; }
   }
   if (globalThis.Translator) {
