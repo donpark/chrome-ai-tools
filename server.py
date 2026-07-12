@@ -50,12 +50,16 @@ async function checkAPI() {
   const el = document.getElementById('status');
   const api = globalThis.LanguageModel;
   if (!api) { el.className = 'err'; el.textContent = 'LanguageModel not available.'; return false; }
-  try {
-    const avail = await api.availability({expectedInputs:[{type:'text',languages:['en']}],expectedOutputs:[{type:'text',languages:['en']}]});
-    if (avail === 'unavailable') { el.className = 'err'; el.textContent = 'Model not available. Check chrome://components'; return false; }
-    el.className = 'ok'; el.textContent = 'Ready (' + avail + '). Prompt/Summarize/Translate/Write.';
-    return true;
-  } catch(e) { el.className = 'err'; el.textContent = 'Error: ' + e.message; return false; }
+  el.className = 'status';
+  while (true) {
+    try {
+      const avail = await api.availability({expectedInputs:[{type:'text',languages:['en']}],expectedOutputs:[{type:'text',languages:['en']}]});
+      if (avail === 'unavailable') { el.className = 'err'; el.textContent = 'Model not available. Check chrome://components'; return false; }
+      if (avail === 'readily') { el.className = 'ok'; el.textContent = 'Ready. Prompt/Summarize/Translate/Write.'; return true; }
+      el.textContent = 'Model ' + avail + ', waiting...';
+      await new Promise(r => setTimeout(r, 2000));
+    } catch(e) { el.className = 'err'; el.textContent = 'Error: ' + e.message; return false; }
+  }
 }
 
 async function processJob(job) {
