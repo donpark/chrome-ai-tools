@@ -16,11 +16,11 @@ function base(): string {
   return _base;
 }
 
-async function submitPrompt(system: string, user: string): Promise<string> {
+async function submitJob(params: Record<string, string>): Promise<string> {
   const resp = await fetch(`${base()}/prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ system, user }),
+    body: JSON.stringify(params),
   });
   if (!resp.ok) throw new Error(`${resp.status}`);
   const data = await resp.json() as { id: string };
@@ -41,11 +41,35 @@ async function waitForResult(id: string, timeoutMs = 120_000): Promise<string> {
     if (data.status === 'error') throw new Error(data.error || 'Unknown error');
     await new Promise((r) => setTimeout(r, 1000));
   }
-  throw new Error(`Prompt ${id} timed out after ${timeoutMs}ms`);
+  throw new Error(`Job ${id} timed out after ${timeoutMs}ms`);
 }
 
+// --- Public API ---
+
 export async function prompt(opts: PromptOptions): Promise<string> {
-  const id = await submitPrompt(opts.system ?? '', opts.user);
+  const id = await submitJob({ api: 'prompt', system: opts.system ?? '', user: opts.user });
   console.error(`Chrome AI: prompt ${id} submitted. Bridge page: ${base()}`);
+  return waitForResult(id);
+}
+
+export async function summarize(text: string): Promise<string> {
+  const id = await submitJob({ api: 'summarize', text });
+  console.error(`Chrome AI: summarize ${id} submitted. Bridge page: ${base()}`);
+  return waitForResult(id);
+}
+
+export async function translate(
+  text: string,
+  sourceLanguage: string,
+  targetLanguage: string,
+): Promise<string> {
+  const id = await submitJob({ api: 'translate', text, sourceLanguage, targetLanguage });
+  console.error(`Chrome AI: translate ${id} submitted. Bridge page: ${base()}`);
+  return waitForResult(id);
+}
+
+export async function write(text: string, context?: string): Promise<string> {
+  const id = await submitJob({ api: 'write', text, context: context ?? '' });
+  console.error(`Chrome AI: write ${id} submitted. Bridge page: ${base()}`);
   return waitForResult(id);
 }

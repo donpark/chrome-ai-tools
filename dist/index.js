@@ -10,11 +10,11 @@ function base() {
         _base = _base.slice(0, -1);
     return _base;
 }
-async function submitPrompt(system, user) {
+async function submitJob(params) {
     const resp = await fetch(`${base()}/prompt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ system, user }),
+        body: JSON.stringify(params),
     });
     if (!resp.ok)
         throw new Error(`${resp.status}`);
@@ -38,10 +38,26 @@ async function waitForResult(id, timeoutMs = 120_000) {
             throw new Error(data.error || 'Unknown error');
         await new Promise((r) => setTimeout(r, 1000));
     }
-    throw new Error(`Prompt ${id} timed out after ${timeoutMs}ms`);
+    throw new Error(`Job ${id} timed out after ${timeoutMs}ms`);
 }
+// --- Public API ---
 export async function prompt(opts) {
-    const id = await submitPrompt(opts.system ?? '', opts.user);
+    const id = await submitJob({ api: 'prompt', system: opts.system ?? '', user: opts.user });
     console.error(`Chrome AI: prompt ${id} submitted. Bridge page: ${base()}`);
+    return waitForResult(id);
+}
+export async function summarize(text) {
+    const id = await submitJob({ api: 'summarize', text });
+    console.error(`Chrome AI: summarize ${id} submitted. Bridge page: ${base()}`);
+    return waitForResult(id);
+}
+export async function translate(text, sourceLanguage, targetLanguage) {
+    const id = await submitJob({ api: 'translate', text, sourceLanguage, targetLanguage });
+    console.error(`Chrome AI: translate ${id} submitted. Bridge page: ${base()}`);
+    return waitForResult(id);
+}
+export async function write(text, context) {
+    const id = await submitJob({ api: 'write', text, context: context ?? '' });
+    console.error(`Chrome AI: write ${id} submitted. Bridge page: ${base()}`);
     return waitForResult(id);
 }

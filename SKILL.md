@@ -5,18 +5,18 @@ allowed-tools: Bash(node:*), Bash(python3:*)
 ---
 
 > **Status: Alpha. Not yet published to npm.**
-> npm: `npm install chrome-ai` → `import { prompt } from 'chrome-ai'`
-> Python: `python chrome_ai/server.py` then `from chrome_ai.client import prompt`
-> CLI: `npx chrome-ai prompt "hello"` or `chrome-ai summarize "text"` (after `npm install -g`)
+> npm: `npm install chrome-ai` → `import { prompt, summarize, translate, write } from 'chrome-ai'`
+> Python: `python chrome_ai/server.py` then `from chrome_ai.client import prompt, summarize, translate, write`
+> CLI: `chrome-ai prompt|summarize|translate|write [opts] [text]`
 
 # Chrome AI — Python server + dual language bindings + CLI
 
-Chrome's built-in AI APIs (Gemini Nano) only run inside Chrome pages. chrome-ai bridges that gap: a Python HTTP server manages a prompt queue, and a bridge page opened once in Chrome processes prompts.
+Chrome's built-in AI APIs (Gemini Nano) only run inside Chrome pages. chrome-ai bridges that gap: a Python HTTP server manages a prompt queue, and a bridge page opened once in Chrome processes prompts via **LanguageModel**, **Summarizer**, **Translator**, and **Writer** APIs.
 
 ## Architecture
 
 ```
-Client → POST /prompt → Python server queue → Bridge page (Chrome) → LanguageModel API → POST /result → Client polls
+Client → POST /prompt {api, ...params} → Python server queue → Bridge page (Chrome) → dispatches to correct API → POST /result → Client polls
 ```
 
 The Python server runs once. The bridge page is a single Chrome tab you keep open. All clients (Python, Node.js, curl, CLI) talk to the same server via HTTP.
@@ -37,73 +37,137 @@ python chrome_ai/server.py
 ```bash
 npx chrome-ai prompt "What is the capital of France?"
 npx chrome-ai summarize "Some long text..."
+npx chrome-ai translate --from en --to fr "Hello"
+npx chrome-ai write "Write a poem about cats"
 cat some-file.txt | npx chrome-ai summarize
 ```
 
 **4. Or use from Python:**
 
 ```python
-from chrome_ai.client import prompt
+from chrome_ai.client import prompt, summarize, translate, write
 
 text = prompt("You are helpful.", "Hello!")
+summary = summarize("Long text...")
+french = translate("Hello", "en", "fr")
+poem = write("Write a haiku")
 ```
 
 **5. Or from Node.js:**
 
 ```js
-import { prompt } from 'chrome-ai';
+import { prompt, summarize, translate, write } from 'chrome-ai';
+
 const text = await prompt({ system: 'You are helpful.', user: 'Hello!' });
+const summary = await summarize('Long text...');
+const french = await translate('Hello', 'en', 'fr');
+const poem = await write('Write a haiku');
 ```
 
 **6. Or from curl:**
 
 ```bash
-curl -s -X POST http://localhost:62835/prompt -H 'Content-Type: application/json' -d '{"system":"You are helpful.","user":"Hello!"}'
-# → {"id": "abc123"}
+# Prompt API
+curl -s -X POST http://localhost:62835/prompt \
+  -H 'Content-Type: application/json' \
+  -d '{"api":"prompt","system":"You are helpful.","user":"Hello!"}'
+
+# Summarizer API
+curl -s -X POST http://localhost:62835/prompt \
+  -H 'Content-Type: application/json' \
+  -d '{"api":"summarize","text":"Long text..."}'
+
+# Translator API
+curl -s -X POST http://localhost:62835/prompt \
+  -H 'Content-Type: application/json' \
+  -d '{"api":"translate","text":"Hello","sourceLanguage":"en","targetLanguage":"fr"}'
+
+# Writer API
+curl -s -X POST http://localhost:62835/prompt \
+  -H 'Content-Type: application/json' \
+  -d '{"api":"write","text":"Write a haiku","context":"dogs"}'
+
+# Poll
 curl -s http://localhost:62835/result/abc123
-# → {"status": "done", "text": "Hello!"}
+# → {"status": "done", "text": "..."}
 ```
 
-## Python Client
+## API Reference
+
+### Python Client
 
 ```python
+from chrome_ai.client import prompt, summarize, translate, write
+
+# Prompt API
 prompt(system: str, user: str, timeout: float = 120) -> str
+
+# Summarizer API
+summarize(text: str, timeout: float = 120) -> str
+
+# Translator API
+translate(text: str, source_language: str, target_language: str, timeout: float = 120) -> str
+
+# Writer API
+write(text: str, context: str = "", timeout: float = 120) -> str
 ```
 
-The client can auto-start the server if not already running:
+The client auto-starts the server if not already running.
 
-```python
-from chrome_ai.client import prompt
-
-# First call auto-starts server, opens Chrome bridge page
-text = prompt("You are helpful.", "Hello!")
-```
-
-## TypeScript Client
+### TypeScript Client
 
 ```ts
+import { prompt, summarize, translate, write } from 'chrome-ai';
+
 prompt(opts: { system?: string; user: string }): Promise<string>
+summarize(text: string): Promise<string>
+translate(text: string, sourceLanguage: string, targetLanguage: string): Promise<string>
+write(text: string, context?: string): Promise<string>
 ```
 
 Requires the server to be running (or `CHROME_AI_URL` env var set).
 
-## CLI
+### CLI
 
 ```bash
-# Direct prompt
+# Prompt
 chrome-ai prompt "What is the capital of France?"
 
-# Summarize (wraps with system prompt)
+# Summarize
 chrome-ai summarize "Some text to summarize..."
 
-# Pipe text in
-cat long-file.txt | chrome-ai summarize
+# Translate (--from defaults to en if omitted)
+chrome-ai translate --from en --to fr "Hello world"
+echo "Hello" | chrome-ai translate --from en --to es
 
-# Use via npx (no global install)
-npx chrome-ai prompt "hello"
+# Write
+chrome-ai write "Write a poem about cats"
+chrome-ai write "Write a story" --context "space pirates"
+
+# Pipe text
+cat file.txt | chrome-ai summarize
 ```
 
 Auto-starts the Python server if not already running.
+
+### HTTP API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/prompt` | Submit job `{api, ...params}` → `{id}` |
+| GET | `/pending` | Bridge page polls for pending jobs |
+| POST | `/result/{id}` | Bridge page submits `{status, text}` |
+| GET | `/result/{id}` | Client polls for result |
+| GET | `/health` | `{ok, port, pending}` |
+
+POST `/prompt` params by API:
+
+| api | Required | Optional |
+|-----|----------|----------|
+| `prompt` | `user` | `system` |
+| `summarize` | `text` | — |
+| `translate` | `text`, `sourceLanguage`, `targetLanguage` | — |
+| `write` | `text` | `context` |
 
 ## Requirements
 

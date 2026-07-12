@@ -77,31 +77,79 @@ class ServerTest(unittest.TestCase):
         status, _ = self._get("/nonexistent", expected_status=404)
         self.assertEqual(status, 404)
 
-    def test_submit_prompt_returns_id(self):
-        status, body = self._post("/prompt", {"system": "sys", "user": "hello"})
-        self.assertEqual(status, 200)
-        data = json.loads(body)
-        self.assertIn("id", data)
-        self.assertEqual(len(data["id"]), 12)
+    # --- Prompt (backward compat) ---
 
-    def test_pending_shows_submitted_prompts(self):
-        self._post("/prompt", {"system": "s1", "user": "u1"})
-        self._post("/prompt", {"system": "s2", "user": "u2"})
+    def test_prompt_backward_compat(self):
+        """POST /prompt without api field defaults to prompt."""
+        _, body = self._post("/prompt", {"system": "sys", "user": "hello"})
+        pid = json.loads(body)["id"]
 
-        status, body = self._get("/pending")
-        data = json.loads(body)
-        self.assertEqual(len(data), 2)
+        _, pending_body = self._get("/pending")
+        pending = json.loads(pending_body)
+        job = next(j for j in pending if j["id"] == pid)
+        self.assertEqual(job["api"], "prompt")
+        self.assertEqual(job["system"], "sys")
+        self.assertEqual(job["user"], "hello")
+
+    # --- Summarize ---
+
+    def test_summarize_submit(self):
+        _, body = self._post("/prompt", {"api": "summarize", "text": "long text"})
+        pid = json.loads(body)["id"]
+
+        _, pending_body = self._get("/pending")
+        pending = json.loads(pending_body)
+        job = next(j for j in pending if j["id"] == pid)
+        self.assertEqual(job["api"], "summarize")
+        self.assertEqual(job["text"], "long text")
+
+    # --- Translate ---
+
+    def test_translate_submit(self):
+        _, body = self._post("/prompt", {
+            "api": "translate",
+            "text": "hello",
+            "sourceLanguage": "en",
+            "targetLanguage": "fr",
+        })
+        pid = json.loads(body)["id"]
+
+        _, pending_body = self._get("/pending")
+        pending = json.loads(pending_body)
+        job = next(j for j in pending if j["id"] == pid)
+        self.assertEqual(job["api"], "translate")
+        self.assertEqual(job["text"], "hello")
+        self.assertEqual(job["sourceLanguage"], "en")
+        self.assertEqual(job["targetLanguage"], "fr")
+
+    # --- Write ---
+
+    def test_write_submit(self):
+        _, body = self._post("/prompt", {
+            "api": "write",
+            "text": "write a poem",
+            "context": "cats",
+        })
+        pid = json.loads(body)["id"]
+
+        _, pending_body = self._get("/pending")
+        pending = json.loads(pending_body)
+        job = next(j for j in pending if j["id"] == pid)
+        self.assertEqual(job["api"], "write")
+        self.assertEqual(job["text"], "write a poem")
+        self.assertEqual(job["context"], "cats")
+
+    # --- Result lifecycle ---
 
     def test_result_202_while_pending(self):
-        _, body = self._post("/prompt", {"system": "", "user": "x"})
+        _, body = self._post("/prompt", {"api": "prompt", "system": "", "user": "x"})
         pid = json.loads(body)["id"]
         status, _ = self._get(f"/result/{pid}", expected_status=202)
         self.assertEqual(status, 202)
 
     def test_result_returns_after_submission(self):
-        _, body = self._post("/prompt", {"system": "", "user": "x"})
+        _, body = self._post("/prompt", {"api": "summarize", "text": "x"})
         pid = json.loads(body)["id"]
-
         self._post(f"/result/{pid}", {"status": "done", "text": "answer"})
 
         status, body = self._get(f"/result/{pid}")
@@ -110,7 +158,7 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(data["text"], "answer")
 
     def test_result_error_status(self):
-        _, body = self._post("/prompt", {"system": "", "user": "x"})
+        _, body = self._post("/prompt", {"api": "prompt", "system": "", "user": "x"})
         pid = json.loads(body)["id"]
         self._post(f"/result/{pid}", {"status": "error", "error": "boom"})
 
@@ -121,7 +169,7 @@ class ServerTest(unittest.TestCase):
 
     def test_result_one_shot(self):
         """Result consumed on first GET — second returns 202."""
-        _, body = self._post("/prompt", {"system": "", "user": "x"})
+        _, body = self._post("/prompt", {"api": "prompt", "system": "", "user": "x"})
         pid = json.loads(body)["id"]
         self._post(f"/result/{pid}", {"status": "done", "text": "ans"})
 
@@ -131,25 +179,26 @@ class ServerTest(unittest.TestCase):
         status, _ = self._get(f"/result/{pid}", expected_status=202)
         self.assertEqual(status, 202)
 
-    def test_submit_and_poll_cycle(self):
-        """Full submit-pending-result cycle without the client module."""
-        # Submit
-        _, body = self._post("/prompt", {"system": "sys", "user": "hello"})
+    def test_full_submit_pending_result_cycle(self):
+        """End-to-end cycle without the client module."""
+        _, body = self._post("/prompt", {
+            "api": "translate",
+            "text": "hello",
+            "sourceLanguage": "en",
+            "targetLanguage": "es",
+        })
         pid = json.loads(body)["id"]
 
-        # Simulate bridge page processing
         _, pending_body = self._get("/pending")
         pending = json.loads(pending_body)
         self.assertTrue(any(j["id"] == pid for j in pending))
 
-        # Submit result
-        self._post(f"/result/{pid}", {"status": "done", "text": "reply:hello"})
+        self._post(f"/result/{pid}", {"status": "done", "text": "hola"})
 
-        # Read result
         _, result_body = self._get(f"/result/{pid}")
         data = json.loads(result_body)
         self.assertEqual(data["status"], "done")
-        self.assertEqual(data["text"], "reply:hello")
+        self.assertEqual(data["text"], "hola")
 
 
 if __name__ == "__main__":

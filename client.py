@@ -3,16 +3,18 @@
 chrome-ai Python client — submit prompts to Chrome's built-in AI APIs.
 
 Usage:
-  from chrome_ai.client import prompt
+  from chrome_ai.client import prompt, summarize, translate, write
 
   text = prompt("You are helpful.", "Hello!")
+  text = summarize("Long text to summarize...")
+  text = translate("Hello", "en", "fr")
+  text = write("Write a poem about cats")
 """
 
 from __future__ import annotations
 
 import json
 import os
-import sys
 import threading
 import time
 import urllib.request
@@ -32,17 +34,13 @@ def _get_base_url() -> str:
     return f"http://localhost:{port}"
 
 
-def prompt(
-    system: str, user: str, timeout: float = 120
+def _submit_and_poll(
+    params: dict[str, str], timeout: float = 120
 ) -> str:
-    """Call Chrome's LanguageModel API (Gemini Nano).
-
-    Opens a bridge page in Chrome if not already running.
-    """
     base = _get_base_url()
 
     # Submit
-    payload = json.dumps({"system": system, "user": user}).encode()
+    payload = json.dumps(params).encode()
     req = urllib.request.Request(
         f"{base}/prompt",
         data=payload,
@@ -69,4 +67,45 @@ def prompt(
             raise
         time.sleep(1)
 
-    raise TimeoutError(f"Prompt {prompt_id} timed out after {timeout}s")
+    raise TimeoutError(f"Job {prompt_id} timed out after {timeout}s")
+
+
+# --- Public API ---
+
+def prompt(
+    system: str, user: str, timeout: float = 120
+) -> str:
+    """Call Chrome's LanguageModel API (Gemini Nano)."""
+    return _submit_and_poll(
+        {"api": "prompt", "system": system, "user": user}, timeout
+    )
+
+
+def summarize(text: str, timeout: float = 120) -> str:
+    """Call Chrome's Summarizer API."""
+    return _submit_and_poll({"api": "summarize", "text": text}, timeout)
+
+
+def translate(
+    text: str,
+    source_language: str,
+    target_language: str,
+    timeout: float = 120,
+) -> str:
+    """Call Chrome's Translator API."""
+    return _submit_and_poll(
+        {
+            "api": "translate",
+            "text": text,
+            "sourceLanguage": source_language,
+            "targetLanguage": target_language,
+        },
+        timeout,
+    )
+
+
+def write(text: str, context: str = "", timeout: float = 120) -> str:
+    """Call Chrome's Writer API."""
+    return _submit_and_poll(
+        {"api": "write", "text": text, "context": context}, timeout
+    )

@@ -12,19 +12,19 @@ function makeResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), { status });
 }
 
-describe('prompt()', () => {
+describe('client API', () => {
   afterEach(() => {
     mock.restoreAll();
     delete process.env.CHROME_AI_URL;
   });
 
-  it('submits prompt and polls for result', async () => {
+  it('prompt() submits and polls', async () => {
     process.env.CHROME_AI_URL = 'http://localhost:9999';
 
     let callCount = 0;
-    mock.method(globalThis, 'fetch', (url: string | URL, init?: RequestInit) => {
-      const urlStr = url.toString();
-      if (urlStr.endsWith('/prompt')) {
+    mock.method(globalThis, 'fetch', (url: string | URL) => {
+      const u = url.toString();
+      if (u.endsWith('/prompt')) {
         return Promise.resolve(makeResponse({ id: 'abc123' }, 200));
       }
       callCount++;
@@ -37,48 +37,81 @@ describe('prompt()', () => {
     assert.equal(result, 'Hello world');
   });
 
-  it('handles error status', async () => {
-    process.env.CHROME_AI_URL = 'http://localhost:9999';
-
-    mock.method(globalThis, 'fetch', (url: string | URL) => {
-      const urlStr = url.toString();
-      if (urlStr.endsWith('/prompt')) return Promise.resolve(makeResponse({ id: 'err1' }, 200));
-      return Promise.resolve(makeResponse({ status: 'error', error: 'model crashed' }, 200));
-    });
-
-    const { prompt } = await import('./index.js');
-    await assert.rejects(() => prompt({ user: 'x' }), /model crashed/);
-  });
-
-  it('handles non-200 submit response', async () => {
-    process.env.CHROME_AI_URL = 'http://localhost:9999';
-
-    mock.method(globalThis, 'fetch', () => {
-      return Promise.resolve(makeResponse({}, 500));
-    });
-
-    const { prompt } = await import('./index.js');
-    await assert.rejects(() => prompt({ user: 'x' }), /500/);
-  });
-
-  it('defaults to empty system prompt', async () => {
+  it('summarize() sends api=summarize', async () => {
     process.env.CHROME_AI_URL = 'http://localhost:9999';
 
     let submitted = '';
     mock.method(globalThis, 'fetch', (url: string | URL, init?: RequestInit) => {
-      const urlStr = url.toString();
-      if (urlStr.endsWith('/prompt')) {
+      const u = url.toString();
+      if (u.endsWith('/prompt')) {
         submitted = init!.body as string;
-        return Promise.resolve(makeResponse({ id: 'x' }, 200));
+        return Promise.resolve(makeResponse({ id: 's1' }, 200));
       }
-      return Promise.resolve(makeResponse({ status: 'done', text: 'ok' }, 200));
+      return Promise.resolve(makeResponse({ status: 'done', text: 'summary' }, 200));
     });
 
-    const { prompt } = await import('./index.js');
-    await prompt({ user: 'x' });
-    const parsed = JSON.parse(submitted);
-    assert.equal(parsed.system, '');
-    assert.equal(parsed.user, 'x');
+    const { summarize } = await import('./index.js');
+    const result = await summarize('long text here');
+    assert.equal(result, 'summary');
+    const body = JSON.parse(submitted);
+    assert.equal(body.api, 'summarize');
+    assert.equal(body.text, 'long text here');
+  });
+
+  it('translate() sends api=translate', async () => {
+    process.env.CHROME_AI_URL = 'http://localhost:9999';
+
+    let submitted = '';
+    mock.method(globalThis, 'fetch', (url: string | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith('/prompt')) {
+        submitted = init!.body as string;
+        return Promise.resolve(makeResponse({ id: 't1' }, 200));
+      }
+      return Promise.resolve(makeResponse({ status: 'done', text: 'bonjour' }, 200));
+    });
+
+    const { translate } = await import('./index.js');
+    const result = await translate('hello', 'en', 'fr');
+    assert.equal(result, 'bonjour');
+    const body = JSON.parse(submitted);
+    assert.equal(body.api, 'translate');
+    assert.equal(body.sourceLanguage, 'en');
+    assert.equal(body.targetLanguage, 'fr');
+  });
+
+  it('write() sends api=write', async () => {
+    process.env.CHROME_AI_URL = 'http://localhost:9999';
+
+    let submitted = '';
+    mock.method(globalThis, 'fetch', (url: string | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith('/prompt')) {
+        submitted = init!.body as string;
+        return Promise.resolve(makeResponse({ id: 'w1' }, 200));
+      }
+      return Promise.resolve(makeResponse({ status: 'done', text: 'poem' }, 200));
+    });
+
+    const { write } = await import('./index.js');
+    const result = await write('write a poem', 'cats');
+    assert.equal(result, 'poem');
+    const body = JSON.parse(submitted);
+    assert.equal(body.api, 'write');
+    assert.equal(body.text, 'write a poem');
+    assert.equal(body.context, 'cats');
+  });
+
+  it('handles error status', async () => {
+    process.env.CHROME_AI_URL = 'http://localhost:9999';
+
+    mock.method(globalThis, 'fetch', (url: string | URL) => {
+      if (url.toString().endsWith('/prompt')) return Promise.resolve(makeResponse({ id: 'err1' }, 200));
+      return Promise.resolve(makeResponse({ status: 'error', error: 'model crashed' }, 200));
+    });
+
+    const { summarize } = await import('./index.js');
+    await assert.rejects(() => summarize('x'), /model crashed/);
   });
 });
 
@@ -89,8 +122,26 @@ describe('CLI', () => {
     assert.notEqual(code, 0);
   });
 
-  it('rejects missing text', async () => {
+  it('rejects missing text for prompt', async () => {
     const { stderr, code } = await runCLI(['prompt']);
+    assert.match(stderr, /No text provided/);
+    assert.notEqual(code, 0);
+  });
+
+  it('rejects missing text for summarize', async () => {
+    const { stderr, code } = await runCLI(['summarize']);
+    assert.match(stderr, /No text provided/);
+    assert.notEqual(code, 0);
+  });
+
+  it('rejects translate without --to', async () => {
+    const { stderr, code } = await runCLI(['translate', '--from', 'en', 'hello']);
+    assert.match(stderr, /requires --to/);
+    assert.notEqual(code, 0);
+  });
+
+  it('rejects missing text for translate', async () => {
+    const { stderr, code } = await runCLI(['translate', '--from', 'en', '--to', 'fr']);
     assert.match(stderr, /No text provided/);
     assert.notEqual(code, 0);
   });

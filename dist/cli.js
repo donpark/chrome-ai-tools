@@ -29,14 +29,46 @@ function startServer() {
         setTimeout(() => reject(new Error('Server start timed out')), 10_000);
     });
 }
+function parseFlags(args, flagNames) {
+    const result = {};
+    const rest = [];
+    for (let i = 0; i < args.length; i++) {
+        if (args[i].startsWith('--') && flagNames.includes(args[i].slice(2))) {
+            const name = args[i].slice(2);
+            result[name] = args[i + 1] ?? '';
+            i++;
+        }
+        else {
+            rest.push(args[i]);
+        }
+    }
+    return { flags: result, rest };
+}
+function usage() {
+    process.stderr.write('Usage: chrome-ai <command> [options] [text]\n' +
+        '\n' +
+        'Commands:\n' +
+        '  prompt      Send a prompt to the language model\n' +
+        '  summarize   Summarize text\n' +
+        '  translate   Translate text (requires --from and --to)\n' +
+        '  write       Generate or rewrite text\n' +
+        '\n' +
+        'Options:\n' +
+        '  --from LANG   Source language (translate, default: en)\n' +
+        '  --to LANG     Target language (translate, required)\n' +
+        '  --context CTX Context for write command\n' +
+        '\n' +
+        'Pipe text via stdin: cat file.txt | chrome-ai summarize\n');
+    process.exit(1);
+}
 async function main() {
     const args = process.argv.slice(2);
     const cmd = args[0];
-    if (!cmd || (cmd !== 'prompt' && cmd !== 'summarize')) {
-        process.stderr.write('Usage: chrome-ai prompt|summarize [text]\n');
-        process.exit(1);
+    if (!cmd || !['prompt', 'summarize', 'translate', 'write'].includes(cmd)) {
+        usage();
     }
-    let text = args.slice(1).join(' ').trim();
+    const { flags, rest } = parseFlags(args.slice(1), ['from', 'to', 'context']);
+    let text = rest.join(' ').trim();
     if (!text && !process.stdin.isTTY) {
         text = await readStdin();
     }
@@ -44,13 +76,36 @@ async function main() {
         process.stderr.write('No text provided.\n');
         process.exit(1);
     }
-    const system = cmd === 'summarize' ? 'Summarize the following text.' : '';
+    // Build API call
+    const { prompt, summarize, translate, write } = await import('./index.js');
     if (!process.env.CHROME_AI_URL) {
         const url = await startServer();
         process.env.CHROME_AI_URL = url;
     }
-    const { prompt } = await import('./index.js');
-    const result = await prompt({ system, user: text });
+    let result;
+    switch (cmd) {
+        case 'prompt':
+            result = await prompt({ user: text });
+            break;
+        case 'summarize':
+            result = await summarize(text);
+            break;
+        case 'translate': {
+            const from = flags['from'] || 'en';
+            const to = flags['to'];
+            if (!to) {
+                process.stderr.write('translate requires --to LANG\n');
+                process.exit(1);
+            }
+            result = await translate(text, from, to);
+            break;
+        }
+        case 'write':
+            result = await write(text, flags['context']);
+            break;
+        default:
+            usage();
+    }
     process.stdout.write(result + '\n');
 }
 main().catch((err) => {

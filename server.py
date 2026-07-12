@@ -50,9 +50,43 @@ async function checkAPI() {
   try {
     const avail = await api.availability({expectedInputs:[{type:'text',languages:['en']}],expectedOutputs:[{type:'text',languages:['en']}]});
     if (avail === 'unavailable') { el.className = 'err'; el.textContent = 'Model not available. Check chrome://components'; return false; }
-    el.className = 'ok'; el.textContent = 'Ready (' + avail + ')';
+    el.className = 'ok'; el.textContent = 'Ready (' + avail + '). Prompt/Summarize/Translate/Write.';
     return true;
   } catch(e) { el.className = 'err'; el.textContent = 'Error: ' + e.message; return false; }
+}
+
+async function processJob(job) {
+  if (job.api === 'summarize') {
+    const s = await globalThis.Summarizer.create({
+      expectedInputs: [{type:'text',languages:['en']}],
+      expectedOutputs: [{type:'text',languages:['en']}],
+    });
+    try { return await s.summarize(job.text); } finally { s.destroy(); }
+  }
+  if (job.api === 'translate') {
+    const t = await globalThis.Translator.create({
+      sourceLanguage: job.sourceLanguage,
+      targetLanguage: job.targetLanguage,
+      expectedInputs: [{type:'text',languages:['en']}],
+      expectedOutputs: [{type:'text',languages:['en']}],
+    });
+    try { return await t.translate(job.text); } finally { t.destroy(); }
+  }
+  if (job.api === 'write') {
+    const w = await globalThis.Writer.create({
+      expectedInputs: [{type:'text',languages:['en']}],
+      expectedOutputs: [{type:'text',languages:['en']}],
+    });
+    const opts = job.context ? {context: job.context} : undefined;
+    try { return await w.write(job.text, opts); } finally { w.destroy(); }
+  }
+  // prompt (default)
+  const session = await globalThis.LanguageModel.create({
+    initialPrompts: job.system ? [{role:'system', content: job.system}] : [],
+    expectedInputs: [{type:'text',languages:['en']}],
+    expectedOutputs: [{type:'text',languages:['en']}],
+  });
+  try { return await session.prompt(job.user || ''); } finally { if (session.destroy) session.destroy(); }
 }
 
 async function poll() {
@@ -64,23 +98,15 @@ async function poll() {
     for (const job of jobs) {
       if (processed.has(job.id)) continue;
       processed.add(job.id);
-      log('Prompt ' + job.id + '...');
+      log(job.api + ' ' + job.id + '...');
       try {
-        const api = globalThis.LanguageModel;
-        const session = await api.create({
-          initialPrompts: [{role:'system', content: job.system}],
-          expectedInputs: [{type:'text',languages:['en']}],
-          expectedOutputs: [{type:'text',languages:['en']}],
+        const text = await processJob(job);
+        log('  OK (' + text.length + ' chars)');
+        await fetch('/result/' + job.id, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({status: 'done', text})
         });
-        try {
-          const text = await session.prompt(job.user);
-          log('  OK (' + text.length + ' chars)');
-          await fetch('/result/' + job.id, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({status: 'done', text})
-          });
-        } finally { if (session.destroy) session.destroy(); }
       } catch(e) {
         log('  ERROR: ' + e.message);
         await fetch('/result/' + job.id, {
@@ -143,10 +169,13 @@ class _Handler(BaseHTTPRequestHandler):
 
         if path == "/pending":
             with _lock:
-                jobs = [
-                    {"id": pid, "system": p["system"], "user": p["user"]}
-                    for pid, p in _pending.items()
-                ]
+                jobs = []
+                for pid, p in _pending.items():
+                    job = {"id": pid, "api": p["api"]}
+                    for k, v in p.items():
+                        if k != "api":
+                            job[k] = v
+                    jobs.append(job)
             return self._json(jobs)
 
         if path.startswith("/result/"):
@@ -167,11 +196,24 @@ class _Handler(BaseHTTPRequestHandler):
 
         if path == "/prompt":
             prompt_id = uuid.uuid4().hex[:12]
+            api = body.get("api", "prompt")
+
             with _lock:
-                _pending[prompt_id] = {
-                    "system": body.get("system", ""),
-                    "user": body.get("user", ""),
-                }
+                job: dict[str, str] = {"api": api}
+                if api == "prompt":
+                    job["system"] = body.get("system", "")
+                    job["user"] = body.get("user", "")
+                elif api == "summarize":
+                    job["text"] = body.get("text", "")
+                elif api == "translate":
+                    job["text"] = body.get("text", "")
+                    job["sourceLanguage"] = body.get("sourceLanguage", "en")
+                    job["targetLanguage"] = body.get("targetLanguage", "en")
+                elif api == "write":
+                    job["text"] = body.get("text", "")
+                    job["context"] = body.get("context", "")
+                _pending[prompt_id] = job
+
             return self._json({"id": prompt_id})
 
         if path.startswith("/result/"):
