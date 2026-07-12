@@ -86,13 +86,13 @@ BRIDGE_PAGE = r"""<!DOCTYPE html>
   .chip{
     font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;
     padding:3px 8px;border-radius:3px;
-    border:1px solid var(--border);
+    border:1px solid rgba(255,255,255,0.08);
     color:var(--muted);
     transition:all .2s;
   }
-  .chip.ready{border-color:var(--green);color:var(--green)}
-  .chip.down{border-color:var(--red);color:var(--red)}
-  .chip.after{border-color:var(--yellow);color:var(--yellow)}
+  .chip.enabled{border-color:#2ea043;color:#fff;background:#2ea043;border-width:2px}
+  .chip.waiting{border-color:#d2991d;color:#111;background:#d2991d;border-width:2px}
+  .chip.missing{border-color:#f85149;color:#fff;background:#f85149;border-width:2px}
 
   /* ── job list ── */
   main{
@@ -216,10 +216,11 @@ function el(tag, attrs, ...children) {
 
 function setChip(id, status) {
   const c = document.getElementById('chip-' + id);
-  c.classList.remove('ready','down','after');
-  if (status === 'readily') c.classList.add('ready');
-  else if (status === 'unavailable' || String(status).startsWith('error')) c.classList.add('down');
-  else c.classList.add('after');
+  const s = String(status ?? '').toLowerCase();
+  c.classList.remove('enabled','waiting','missing');
+  if (s === 'readily' || s === 'available') c.classList.add('enabled');
+  else if (s === 'unavailable' || s.startsWith('error')) c.classList.add('missing');
+  else c.classList.add('waiting');
   c.title = id + ': ' + status;
 }
 
