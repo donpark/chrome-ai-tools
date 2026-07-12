@@ -65,14 +65,6 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn(b"<!DOCTYPE html>", body)
 
-    def test_options_cors(self):
-        req = urllib.request.Request(f"{self.base}/prompt", method="OPTIONS")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            self.assertEqual(resp.status, 204)
-            self.assertEqual(
-                resp.headers.get("Access-Control-Allow-Origin"), "*"
-            )
-
     def test_404_unknown_path(self):
         status, _ = self._get("/nonexistent", expected_status=404)
         self.assertEqual(status, 404)

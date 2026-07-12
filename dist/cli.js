@@ -10,23 +10,36 @@ async function readStdin() {
         chunks.push(chunk);
     return Buffer.concat(chunks).toString().trim();
 }
+async function serverAlive(url) {
+    try {
+        const resp = await fetch(`${url}/health`, { signal: AbortSignal.timeout(2000) });
+        return resp.ok;
+    }
+    catch {
+        return false;
+    }
+}
 function startServer() {
     const serverPy = join(__dirname, '..', 'server.py');
     const python = platform() === 'win32' ? 'python' : 'python3';
-    const proc = spawn(python, [serverPy], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const proc = spawn(python, [serverPy], { stdio: ['ignore', 'pipe', 'ignore'] });
     return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Server start timed out')), 10_000);
         let url = '';
         proc.stdout.on('data', (chunk) => {
             url += chunk.toString();
             const line = url.split('\n')[0].trim();
             if (line.startsWith('http')) {
-                proc.stdout.removeAllListeners();
+                clearTimeout(timer);
                 proc.stdout.destroy();
+                proc.unref(); // let the CLI exit; server keeps running for future calls
                 resolve(line);
             }
         });
-        proc.on('error', reject);
-        setTimeout(() => reject(new Error('Server start timed out')), 10_000);
+        proc.on('error', (err) => {
+            clearTimeout(timer);
+            reject(err);
+        });
     });
 }
 function parseFlags(args, flagNames) {
@@ -45,7 +58,7 @@ function parseFlags(args, flagNames) {
     return { flags: result, rest };
 }
 function usage() {
-    process.stderr.write('Usage: chrome-ai <command> [options] [text]\n' +
+    process.stderr.write('Usage: chrome-nano <command> [options] [text]\n' +
         '\n' +
         'Commands:\n' +
         '  prompt      Send a prompt to the language model\n' +
@@ -58,7 +71,7 @@ function usage() {
         '  --to LANG     Target language (translate, required)\n' +
         '  --context CTX Context for write command\n' +
         '\n' +
-        'Pipe text via stdin: cat file.txt | chrome-ai summarize\n');
+        'Pipe text via stdin: cat file.txt | chrome-nano summarize\n');
     process.exit(1);
 }
 async function main() {
@@ -76,11 +89,16 @@ async function main() {
         process.stderr.write('No text provided.\n');
         process.exit(1);
     }
-    // Build API call
-    const { prompt, summarize, translate, write } = await import('./index.js');
+    const { prompt, summarize, translate, write, DEFAULT_URL } = await import('./index.js');
     if (!process.env.CHROME_AI_URL) {
-        const url = await startServer();
-        process.env.CHROME_AI_URL = url;
+        if (await serverAlive(DEFAULT_URL)) {
+            process.env.CHROME_AI_URL = DEFAULT_URL;
+        }
+        else {
+            const url = await startServer();
+            process.env.CHROME_AI_URL = url;
+            process.stderr.write(`chrome-nano: started server — open ${url} in Chrome to process jobs\n`);
+        }
     }
     let result;
     switch (cmd) {
@@ -109,6 +127,6 @@ async function main() {
     process.stdout.write(result + '\n');
 }
 main().catch((err) => {
-    process.stderr.write(`chrome-ai: ${err.message}\n`);
+    process.stderr.write(`chrome-nano: ${err.message}\n`);
     process.exit(1);
 });

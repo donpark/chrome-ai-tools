@@ -3,7 +3,7 @@
 chrome-ai Python client — submit prompts to Chrome's built-in AI APIs.
 
 Usage:
-  from chrome_ai.client import prompt, summarize, translate, write
+  from client import prompt, summarize, translate, write
 
   text = prompt("You are helpful.", "Hello!")
   text = summarize("Long text to summarize...")
@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import json
 import os
-import threading
+import sys
 import time
 import urllib.request
 import urllib.error
 
-from chrome_ai.server import start_server, _port as _server_port
+import server as _server
 
 
 def _get_base_url() -> str:
@@ -29,8 +29,22 @@ def _get_base_url() -> str:
     if env_url:
         return env_url.rstrip("/")
 
-    # Auto-start the server if not already running
-    port = _server_port or start_server()
+    if _server._port:  # already started in this process
+        return f"http://localhost:{_server._port}"
+
+    # Reuse a server already running on the default port
+    base = f"http://localhost:{_server.DEFAULT_PORT}"
+    try:
+        with urllib.request.urlopen(f"{base}/health", timeout=2):
+            return base
+    except OSError:
+        pass
+
+    port = _server.start_server(_server.DEFAULT_PORT)
+    print(
+        f"chrome-ai: open http://localhost:{port} in Chrome to process jobs",
+        file=sys.stderr,
+    )
     return f"http://localhost:{port}"
 
 

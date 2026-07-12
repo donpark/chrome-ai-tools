@@ -1,4 +1,4 @@
-// Tests for chrome-ai TypeScript client and CLI — no AI model needed.
+// Tests for chrome-nano TypeScript client and CLI — no AI model needed.
 import { describe, it, afterEach, mock } from 'node:test';
 import assert from 'node:assert';
 import { fileURLToPath } from 'node:url';

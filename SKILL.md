@@ -6,7 +6,7 @@ allowed-tools: Bash(node:*), Bash(python3:*)
 
 > **Status: Alpha. Not yet published to npm.**
 > npm: `npm install chrome-ai` → `import { prompt, summarize, translate, write } from 'chrome-ai'`
-> Python: `python chrome_ai/server.py` then `from chrome_ai.client import prompt, summarize, translate, write`
+> Python: `python3 server.py` then `from client import prompt, summarize, translate, write`
 > CLI: `chrome-ai prompt|summarize|translate|write [opts] [text]`
 
 # Chrome AI — Python server + dual language bindings + CLI
@@ -26,8 +26,8 @@ The Python server runs once. The bridge page is a single Chrome tab you keep ope
 **1. Start the server:**
 
 ```bash
-python chrome_ai/server.py
-# → http://localhost:62835
+python3 server.py
+# → http://localhost:8462
 ```
 
 **2. Open that URL in Chrome.** Keep the tab open.
@@ -45,7 +45,7 @@ cat some-file.txt | npx chrome-ai summarize
 **4. Or use from Python:**
 
 ```python
-from chrome_ai.client import prompt, summarize, translate, write
+from client import prompt, summarize, translate, write
 
 text = prompt("You are helpful.", "Hello!")
 summary = summarize("Long text...")
@@ -56,7 +56,7 @@ poem = write("Write a haiku")
 **5. Or from Node.js:**
 
 ```js
-import { prompt, summarize, translate, write } from 'chrome-ai';
+import { prompt, summarize, translate, write } from 'chrome-ai-tools';
 
 const text = await prompt({ system: 'You are helpful.', user: 'Hello!' });
 const summary = await summarize('Long text...');
@@ -68,27 +68,27 @@ const poem = await write('Write a haiku');
 
 ```bash
 # Prompt API
-curl -s -X POST http://localhost:62835/prompt \
+curl -s -X POST http://localhost:8462/prompt \
   -H 'Content-Type: application/json' \
   -d '{"api":"prompt","system":"You are helpful.","user":"Hello!"}'
 
 # Summarizer API
-curl -s -X POST http://localhost:62835/prompt \
+curl -s -X POST http://localhost:8462/prompt \
   -H 'Content-Type: application/json' \
   -d '{"api":"summarize","text":"Long text..."}'
 
 # Translator API
-curl -s -X POST http://localhost:62835/prompt \
+curl -s -X POST http://localhost:8462/prompt \
   -H 'Content-Type: application/json' \
   -d '{"api":"translate","text":"Hello","sourceLanguage":"en","targetLanguage":"fr"}'
 
 # Writer API
-curl -s -X POST http://localhost:62835/prompt \
+curl -s -X POST http://localhost:8462/prompt \
   -H 'Content-Type: application/json' \
   -d '{"api":"write","text":"Write a haiku","context":"dogs"}'
 
 # Poll
-curl -s http://localhost:62835/result/abc123
+curl -s http://localhost:8462/result/abc123
 # → {"status": "done", "text": "..."}
 ```
 
@@ -97,7 +97,7 @@ curl -s http://localhost:62835/result/abc123
 ### Python Client
 
 ```python
-from chrome_ai.client import prompt, summarize, translate, write
+from client import prompt, summarize, translate, write
 
 # Prompt API
 prompt(system: str, user: str, timeout: float = 120) -> str
@@ -117,7 +117,7 @@ The client auto-starts the server if not already running.
 ### TypeScript Client
 
 ```ts
-import { prompt, summarize, translate, write } from 'chrome-ai';
+import { prompt, summarize, translate, write } from 'chrome-ai-tools';
 
 prompt(opts: { system?: string; user: string }): Promise<string>
 summarize(text: string): Promise<string>

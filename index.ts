@@ -7,21 +7,30 @@ export interface PromptOptions {
   user: string;
 }
 
+export const DEFAULT_URL = 'http://localhost:8462';
+
 let _base = '';
 
 function base(): string {
   if (_base) return _base;
-  _base = process.env.CHROME_AI_URL ?? 'http://localhost:0';
+  _base = process.env.CHROME_AI_URL ?? DEFAULT_URL;
   if (_base.endsWith('/')) _base = _base.slice(0, -1);
   return _base;
 }
 
 async function submitJob(params: Record<string, string>): Promise<string> {
-  const resp = await fetch(`${base()}/prompt`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(`${base()}/prompt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+  } catch {
+    throw new Error(
+      `chrome-ai server not reachable at ${base()} — run "python3 server.py" and open the bridge page in Chrome, or set CHROME_AI_URL`,
+    );
+  }
   if (!resp.ok) throw new Error(`${resp.status}`);
   const data = await resp.json() as { id: string };
   return data.id;
@@ -48,13 +57,11 @@ async function waitForResult(id: string, timeoutMs = 120_000): Promise<string> {
 
 export async function prompt(opts: PromptOptions): Promise<string> {
   const id = await submitJob({ api: 'prompt', system: opts.system ?? '', user: opts.user });
-  console.error(`Chrome AI: prompt ${id} submitted. Bridge page: ${base()}`);
   return waitForResult(id);
 }
 
 export async function summarize(text: string): Promise<string> {
   const id = await submitJob({ api: 'summarize', text });
-  console.error(`Chrome AI: summarize ${id} submitted. Bridge page: ${base()}`);
   return waitForResult(id);
 }
 
@@ -64,12 +71,10 @@ export async function translate(
   targetLanguage: string,
 ): Promise<string> {
   const id = await submitJob({ api: 'translate', text, sourceLanguage, targetLanguage });
-  console.error(`Chrome AI: translate ${id} submitted. Bridge page: ${base()}`);
   return waitForResult(id);
 }
 
 export async function write(text: string, context?: string): Promise<string> {
   const id = await submitJob({ api: 'write', text, context: context ?? '' });
-  console.error(`Chrome AI: write ${id} submitted. Bridge page: ${base()}`);
   return waitForResult(id);
 }

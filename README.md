@@ -9,7 +9,7 @@ Chrome's AI APIs only run inside browser pages. chrome-ai bridges that gap: a Py
 ## Install
 
 ```bash
-npm install chrome-ai
+npm install chrome-ai-tools
 ```
 
 Then use the `chrome-ai` CLI directly:
@@ -17,7 +17,7 @@ Then use the `chrome-ai` CLI directly:
 ```bash
 npx chrome-ai prompt "hello"
 # or install globally
-npm install -g chrome-ai
+npm install -g chrome-ai-tools
 chrome-ai summarize "some text"
 ```
 
@@ -28,8 +28,8 @@ Just Chrome. No agent-browser, no extensions, no API keys.
 Start the server:
 
 ```bash
-python chrome_ai/server.py
-# → http://localhost:62835
+python3 server.py
+# → http://localhost:8462
 ```
 
 Open that URL in Chrome. Keep the tab open.
@@ -48,7 +48,7 @@ cat some-file.txt | npx chrome-ai summarize
 Or from **Node.js**:
 
 ```js
-import { prompt, summarize, translate, write } from 'chrome-ai';
+import { prompt, summarize, translate, write } from 'chrome-ai-tools';
 
 const answer = await prompt({
   system: 'You are helpful.',
@@ -62,7 +62,7 @@ const poem = await write('Write a haiku about dogs');
 Or from **Python**:
 
 ```python
-from chrome_ai.client import prompt, summarize, translate, write
+from client import prompt, summarize, translate, write
 
 answer = prompt('You are helpful.', 'What is the capital of France?')
 summary = summarize('Long text...')
@@ -74,27 +74,27 @@ Or from **any HTTP client**:
 
 ```bash
 # Prompt API
-curl -s -X POST http://localhost:62835/prompt \
+curl -s -X POST http://localhost:8462/prompt \
   -H 'Content-Type: application/json' \
   -d '{"api":"prompt","system":"You are helpful.","user":"Hello!"}'
 
 # Summarizer API
-curl -s -X POST http://localhost:62835/prompt \
+curl -s -X POST http://localhost:8462/prompt \
   -H 'Content-Type: application/json' \
   -d '{"api":"summarize","text":"Long text to summarize..."}'
 
 # Translator API
-curl -s -X POST http://localhost:62835/prompt \
+curl -s -X POST http://localhost:8462/prompt \
   -H 'Content-Type: application/json' \
   -d '{"api":"translate","text":"Hello","sourceLanguage":"en","targetLanguage":"fr"}'
 
 # Writer API
-curl -s -X POST http://localhost:62835/prompt \
+curl -s -X POST http://localhost:8462/prompt \
   -H 'Content-Type: application/json' \
   -d '{"api":"write","text":"Write a haiku","context":"dogs"}'
 
 # Poll for result
-curl -s http://localhost:62835/result/a1b2c3d4e5f6
+curl -s http://localhost:8462/result/a1b2c3d4e5f6
 # → {"status": "done", "text": "..."}
 ```
 
@@ -124,7 +124,7 @@ Client — poll GET /result/{id} → result
 ### TypeScript
 
 ```ts
-import { prompt, summarize, translate, write } from 'chrome-ai';
+import { prompt, summarize, translate, write } from 'chrome-ai-tools';
 
 // Prompt API
 const text = await prompt({
@@ -149,7 +149,7 @@ const written = await write(text: string, context?: string);
 ### Python
 
 ```python
-from chrome_ai.client import prompt, summarize, translate, write
+from client import prompt, summarize, translate, write
 
 text = prompt(system: str, user: str, timeout: float = 120)
 

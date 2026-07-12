@@ -12,24 +12,37 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString().trim();
 }
 
+async function serverAlive(url: string): Promise<boolean> {
+  try {
+    const resp = await fetch(`${url}/health`, { signal: AbortSignal.timeout(2000) });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
 function startServer(): Promise<string> {
   const serverPy = join(__dirname, '..', 'server.py');
   const python = platform() === 'win32' ? 'python' : 'python3';
-  const proc = spawn(python, [serverPy], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const proc = spawn(python, [serverPy], { stdio: ['ignore', 'pipe', 'ignore'] });
 
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Server start timed out')), 10_000);
     let url = '';
     proc.stdout!.on('data', (chunk: Buffer) => {
       url += chunk.toString();
       const line = url.split('\n')[0].trim();
       if (line.startsWith('http')) {
-        proc.stdout!.removeAllListeners();
+        clearTimeout(timer);
         proc.stdout!.destroy();
+        proc.unref(); // let the CLI exit; server keeps running for future calls
         resolve(line);
       }
     });
-    proc.on('error', reject);
-    setTimeout(() => reject(new Error('Server start timed out')), 10_000);
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 
@@ -86,12 +99,16 @@ async function main() {
     process.exit(1);
   }
 
-  // Build API call
-  const { prompt, summarize, translate, write } = await import('./index.js');
+  const { prompt, summarize, translate, write, DEFAULT_URL } = await import('./index.js');
 
   if (!process.env.CHROME_AI_URL) {
-    const url = await startServer();
-    process.env.CHROME_AI_URL = url;
+    if (await serverAlive(DEFAULT_URL)) {
+      process.env.CHROME_AI_URL = DEFAULT_URL;
+    } else {
+      const url = await startServer();
+      process.env.CHROME_AI_URL = url;
+      process.stderr.write(`chrome-ai: started server — open ${url} in Chrome to process jobs\n`);
+    }
   }
 
   let result: string;

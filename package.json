@@ -1,5 +1,5 @@
 {
-  "name": "chrome-ai",
+  "name": "chrome-ai-tools",
   "version": "0.1.0",
   "description": "Call Chrome's built-in AI APIs (Gemini Nano) from Node.js",
   "type": "module",
@@ -16,6 +16,7 @@
   },
   "files": [
     "dist/",
+    "!dist/test*",
     "SKILL.md",
     "server.py",
     "client.py"
@@ -23,10 +24,9 @@
   "scripts": {
     "build": "tsc",
     "prepare": "tsc",
-    "prepublishOnly": "tsc",
     "test": "node --test dist/test.js && python3 test.py"
   },
-  "repository": "github:donpark/chrome-ai",
+  "repository": "github:donpark/chrome-ai-tools",
   "keywords": [
     "chrome",
     "gemini",

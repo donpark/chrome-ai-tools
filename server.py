@@ -13,11 +13,14 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import time
 import uuid
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+
+DEFAULT_PORT = 8462
 
 _pending: dict[str, dict] = {}
 _results: dict[str, dict] = {}
@@ -58,8 +61,8 @@ async function checkAPI() {
 async function processJob(job) {
   if (job.api === 'summarize') {
     const s = await globalThis.Summarizer.create({
-      expectedInputs: [{type:'text',languages:['en']}],
-      expectedOutputs: [{type:'text',languages:['en']}],
+      expectedInputLanguages: ['en'],
+      outputLanguage: 'en',
     });
     try { return await s.summarize(job.text); } finally { s.destroy(); }
   }
@@ -67,15 +70,13 @@ async function processJob(job) {
     const t = await globalThis.Translator.create({
       sourceLanguage: job.sourceLanguage,
       targetLanguage: job.targetLanguage,
-      expectedInputs: [{type:'text',languages:['en']}],
-      expectedOutputs: [{type:'text',languages:['en']}],
     });
     try { return await t.translate(job.text); } finally { t.destroy(); }
   }
   if (job.api === 'write') {
     const w = await globalThis.Writer.create({
-      expectedInputs: [{type:'text',languages:['en']}],
-      expectedOutputs: [{type:'text',languages:['en']}],
+      expectedInputLanguages: ['en'],
+      outputLanguage: 'en',
     });
     const opts = job.context ? {context: job.context} : undefined;
     try { return await w.write(job.text, opts); } finally { w.destroy(); }
@@ -137,7 +138,6 @@ class _Handler(BaseHTTPRequestHandler):
         body = json.dumps(data).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -149,13 +149,6 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
-
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
 
     def do_GET(self):
         path = self.path.split("?")[0]
@@ -230,7 +223,7 @@ class _Handler(BaseHTTPRequestHandler):
 def start_server(port: int = 0):
     """Start the HTTP server. Returns the actual port."""
     global _port
-    server = HTTPServer(("localhost", port), _Handler)
+    server = ThreadingHTTPServer(("localhost", port), _Handler)
     _port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -238,7 +231,12 @@ def start_server(port: int = 0):
 
 
 def main():
-    port = start_server()
+    port = int(os.environ.get("CHROME_AI_PORT", DEFAULT_PORT))
+    try:
+        port = start_server(port)
+    except OSError as e:
+        print(f"Port {port} unavailable ({e}) — server may already be running.", file=sys.stderr)
+        sys.exit(1)
     print(f"http://localhost:{port}")
     sys.stdout.flush()
     try:
