@@ -103,7 +103,7 @@ function runCLI(args: string[]): Promise<{ stdout: string; stderr: string; code:
       [join(__dirname, 'cli.js'), ...args],
       {
         env: { ...process.env, NODE_OPTIONS: '', CHROME_AI_URL: 'http://localhost:9999' },
-        stdio: ['pipe', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
 

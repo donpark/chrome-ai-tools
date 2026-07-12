@@ -83,7 +83,7 @@ function runCLI(args) {
     return new Promise((resolve) => {
         const proc = spawn(process.execPath, [join(__dirname, 'cli.js'), ...args], {
             env: { ...process.env, NODE_OPTIONS: '', CHROME_AI_URL: 'http://localhost:9999' },
-            stdio: ['pipe', 'pipe', 'pipe'],
+            stdio: ['ignore', 'pipe', 'pipe'],
         });
         let stdout = '';
         let stderr = '';

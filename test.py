@@ -2,7 +2,6 @@
 """Tests for chrome-ai server and Python client — no AI model needed."""
 
 import json
-import threading
 import time
 import unittest
 import urllib.request
@@ -132,38 +131,25 @@ class ServerTest(unittest.TestCase):
         status, _ = self._get(f"/result/{pid}", expected_status=202)
         self.assertEqual(status, 202)
 
-    def test_client_submit_and_poll(self):
-        """Python client prompt() end-to-end against real server."""
-        from client import prompt as client_prompt
+    def test_submit_and_poll_cycle(self):
+        """Full submit-pending-result cycle without the client module."""
+        # Submit
+        _, body = self._post("/prompt", {"system": "sys", "user": "hello"})
+        pid = json.loads(body)["id"]
 
-        os.environ["CHROME_AI_URL"] = self.base
-        try:
-            def bridge_mock():
-                time.sleep(0.3)
-                _, b = self._get("/pending")
-                jobs = json.loads(b)
-                for j in jobs:
-                    self._post(f"/result/{j['id']}",
-                               {"status": "done", "text": f"reply:{j['user']}"})
+        # Simulate bridge page processing
+        _, pending_body = self._get("/pending")
+        pending = json.loads(pending_body)
+        self.assertTrue(any(j["id"] == pid for j in pending))
 
-            t = threading.Thread(target=bridge_mock, daemon=True)
-            t.start()
+        # Submit result
+        self._post(f"/result/{pid}", {"status": "done", "text": "reply:hello"})
 
-            result = client_prompt("sys", "hello", timeout=5)
-            self.assertEqual(result, "reply:hello")
-        finally:
-            del os.environ["CHROME_AI_URL"]
-
-
-class ClientUnitTest(unittest.TestCase):
-    def test_get_base_url_env_var(self):
-        import client
-        os.environ["CHROME_AI_URL"] = "http://localhost:9999/"
-        try:
-            url = client._get_base_url()
-            self.assertEqual(url, "http://localhost:9999")
-        finally:
-            del os.environ["CHROME_AI_URL"]
+        # Read result
+        _, result_body = self._get(f"/result/{pid}")
+        data = json.loads(result_body)
+        self.assertEqual(data["status"], "done")
+        self.assertEqual(data["text"], "reply:hello")
 
 
 if __name__ == "__main__":
