@@ -133,6 +133,7 @@ BRIDGE_PAGE = r"""<!DOCTYPE html>
   .badge-summarize{background:rgba(163,113,247,.15);color:var(--purple)}
   .badge-translate{background:rgba(210,153,29,.15);color:var(--yellow)}
   .badge-write{background:rgba(209,134,94,.15);color:var(--orange)}
+  .badge-agent-route{background:rgba(47,129,247,.15);color:#2f81f7}
   .card-id{font-size:10px;color:var(--muted)}
   .card-state{font-size:10px;margin-left:auto}
   .state-running{color:var(--yellow)}
@@ -189,6 +190,7 @@ BRIDGE_PAGE = r"""<!DOCTYPE html>
   <span class="chip" id="chip-summarizer">summarizer</span>
   <span class="chip" id="chip-translator">translator</span>
   <span class="chip" id="chip-writer">writer</span>
+  <span class="chip" id="chip-agent-route">agent-route</span>
 </div>
 <main id="jobs"></main>
 <script>
@@ -225,7 +227,7 @@ function setChip(id, status) {
 }
 
 function badgeClass(api) {
-  return {prompt:'badge-prompt',summarize:'badge-summarize',translate:'badge-translate',write:'badge-write'}[api] || 'badge-prompt';
+  return {prompt:'badge-prompt',summarize:'badge-summarize',translate:'badge-translate',write:'badge-write','agent-route':'badge-agent-route'}[api] || 'badge-prompt';
 }
 
 function stateClass(status) {
@@ -331,12 +333,14 @@ async function checkAPI() {
       results.writer = await globalThis.Writer.availability({expectedInputLanguages:['en'],outputLanguage:'en'});
     } catch(e) { results.writer = 'error: ' + e.message; }
   }
+  results['agent-route'] = results.prompt;
   fetch('/api-status', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(results)}).catch(()=>{});
 
   setChip('prompt', results.prompt || 'unavailable');
   setChip('summarizer', results.summarizer || 'unavailable');
   setChip('translator', results.translator || 'unavailable');
   setChip('writer', results.writer || 'unavailable');
+  setChip('agent-route', results['agent-route'] || 'unavailable');
 
   const ok = results.prompt !== 'unavailable' && !String(results.prompt).startsWith('error');
   if (ok && !serverDown) $dot.className = 'dot online';
@@ -368,6 +372,39 @@ async function processJob(job) {
     const w = await globalThis.Writer.create({expectedInputLanguages:['en'],outputLanguage:'en'});
     const opts = job.context ? {context:job.context} : undefined;
     try { return await w.write(job.text, opts); } finally { w.destroy(); }
+  }
+  if (job.api === 'agent-route') {
+    let tools;
+    try { tools = JSON.parse(job.tools); } catch(e) { throw new Error('Invalid tools JSON'); }
+    function fmtType(prop) {
+      if (prop.enum) return prop.enum.join('|');
+      const t = {string:'str',boolean:'bool',number:'num',integer:'int',object:'obj',array:'arr'};
+      return t[prop.type] || prop.type || 'any';
+    }
+    function fmtTool(t) {
+      const props = t.inputSchema?.properties || {};
+      const required = t.inputSchema?.required || [];
+      const params = Object.entries(props).map(([k, v]) => k + (required.includes(k) ? ':' : '?:') + fmtType(v)).join(', ');
+      return t.name + '(' + params + ') - ' + (t.description || '');
+    }
+    const toolLines = tools.map(fmtTool).join('\n');
+    const instructions = job.system ? [job.system, '', 'Tools:', toolLines] : [
+      'Router. Output ONLY: {"name":"<tool>|null","arguments":{...}}',
+      'Rules:',
+      '- Required args: user gave explicit values for them.',
+      '- Optional args omitted = executor fills from page context.',
+      '- No match: {"name":null,"arguments":{}}',
+      '',
+      'Tools:',
+      toolLines,
+    ];
+    const system = instructions.join('\n');
+    const s = await globalThis.LanguageModel.create({
+      initialPrompts:[{role:'system',content:system}],
+      expectedInputs:[{type:'text',languages:['en']}],
+      expectedOutputs:[{type:'text',languages:['en']}],
+    });
+    try { return await s.prompt(job.query || ''); } finally { if (s.destroy) s.destroy(); }
   }
   const session = await globalThis.LanguageModel.create({
     initialPrompts: job.system ? [{role:'system',content:job.system}] : [],
@@ -498,7 +535,7 @@ class _Handler(BaseHTTPRequestHandler):
             api = body.get("api", "prompt")
 
             # Reject if bridge has reported and this API is unavailable/missing
-            key = {"summarize": "summarizer", "translate": "translator", "write": "writer"}.get(api, "prompt")
+            key = {"summarize": "summarizer", "translate": "translator", "write": "writer", "agent-route": "prompt"}.get(api, "prompt")
             with _lock:
                 status = _api_status.get(key)
             if _api_status and status is None:
@@ -522,6 +559,9 @@ class _Handler(BaseHTTPRequestHandler):
                 elif api == "write":
                     job["text"] = body.get("text", "")
                     job["context"] = body.get("context", "")
+                elif api == "agent-route":
+                    job["query"] = body.get("query", "")
+                    job["tools"] = body.get("tools", "[]")
                 _pending[prompt_id] = job
 
             return self._json({"id": prompt_id})

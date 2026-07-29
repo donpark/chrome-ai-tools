@@ -1,6 +1,6 @@
 // Tests for chrome-ai TypeScript client and CLI — no AI model needed.
 
-import { describe, it, afterEach, mock } from 'node:test';
+import { describe, it, afterEach, mock, before } from 'node:test';
 import assert from 'node:assert';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -144,6 +144,94 @@ describe('CLI', () => {
     const { stderr, code } = await runCLI(['translate', '--from', 'en', '--to', 'fr']);
     assert.match(stderr, /No text provided/);
     assert.notEqual(code, 0);
+  });
+});
+
+describe('agentRoute', () => {
+  afterEach(() => {
+    mock.restoreAll();
+    delete process.env.CHROME_AI_URL;
+  });
+
+  const tools = [
+    { name: 'summarize_page', description: 'Summarize page text', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } },
+    { name: 'lookup_posts', description: 'Find related posts', inputSchema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
+  ];
+
+  it('submits agent-route job and parses JSON result', async () => {
+    process.env.CHROME_AI_URL = 'http://localhost:9999';
+
+    let submitted = '';
+    mock.method(globalThis, 'fetch', (url: string | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith('/prompt')) {
+        submitted = init!.body as string;
+        return Promise.resolve(new Response(JSON.stringify({ id: 'ar1' }), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ status: 'done', text: '{"name":"summarize_page","arguments":{"text":"page content"}}' }), { status: 200 }));
+    });
+
+    const { agentRoute } = await import('./index.js');
+    const result = await agentRoute('summarize this page', tools);
+    assert.equal(result.name, 'summarize_page');
+    assert.deepEqual(result.arguments, { text: 'page content' });
+
+    const body = JSON.parse(submitted);
+    assert.equal(body.api, 'agent-route');
+    assert.equal(body.query, 'summarize this page');
+    assert.ok(body.tools);
+    assert.deepEqual(JSON.parse(body.tools), tools);
+  });
+
+  it('returns null on JSON parse failure', async () => {
+    process.env.CHROME_AI_URL = 'http://localhost:9999';
+
+    mock.method(globalThis, 'fetch', (url: string | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith('/prompt'))
+        return Promise.resolve(new Response(JSON.stringify({ id: 'ar2' }), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ status: 'done', text: 'not valid json' }), { status: 200 }));
+    });
+
+    const { agentRoute } = await import('./index.js');
+    const result = await agentRoute('do something', tools);
+    assert.equal(result.name, null);
+    assert.deepEqual(result.arguments, {});
+  });
+
+  it('returns null on empty result', async () => {
+    process.env.CHROME_AI_URL = 'http://localhost:9999';
+
+    mock.method(globalThis, 'fetch', (url: string | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith('/prompt'))
+        return Promise.resolve(new Response(JSON.stringify({ id: 'ar3' }), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ status: 'done', text: '{"name":null,"arguments":{}}' }), { status: 200 }));
+    });
+
+    const { agentRoute } = await import('./index.js');
+    const result = await agentRoute('what is the weather', tools);
+    assert.equal(result.name, null);
+  });
+
+  it('passes system prompt override', async () => {
+    process.env.CHROME_AI_URL = 'http://localhost:9999';
+
+    let submitted = '';
+    mock.method(globalThis, 'fetch', (url: string | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith('/prompt')) {
+        submitted = init!.body as string;
+        return Promise.resolve(new Response(JSON.stringify({ id: 'ar4' }), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ status: 'done', text: '{"name":null,"arguments":{}}' }), { status: 200 }));
+    });
+
+    const { agentRoute } = await import('./index.js');
+    const custom = 'You are a test router. Be strict.';
+    await agentRoute('test query', tools, { system: custom });
+    const body = JSON.parse(submitted);
+    assert.equal(body.system, custom);
   });
 });
 

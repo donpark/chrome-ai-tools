@@ -58,6 +58,42 @@ async function waitForResult(id: string, timeoutMs = 120_000): Promise<string> {
 
 // --- Public API ---
 
+// --- Agent Route API ---
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface ToolRoute {
+  name: string | null;
+  arguments: Record<string, unknown>;
+}
+
+export interface AgentRouteOptions {
+  /** Custom system prompt. If omitted, the default compressed DSL prompt is used. */
+  system?: string;
+}
+
+export async function agentRoute(
+  query: string,
+  tools: ToolDefinition[],
+  opts?: AgentRouteOptions,
+): Promise<ToolRoute> {
+  const params: Record<string, string> = { api: 'agent-route', query, tools: JSON.stringify(tools) };
+  if (opts?.system) params.system = opts.system;
+  const id = await submitJob(params);
+  const text = await waitForResult(id);
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { name: null, arguments: {} };
+  }
+}
+
+// --- Public API ---
+
 export async function prompt(opts: PromptOptions): Promise<string> {
   const id = await submitJob({ api: 'prompt', system: opts.system ?? '', user: opts.user });
   return waitForResult(id);

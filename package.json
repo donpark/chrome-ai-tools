@@ -1,6 +1,6 @@
 {
   "name": "chrome-ai-tools",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Call Chrome's built-in AI APIs (Gemini Nano) from Node.js",
   "type": "module",
   "main": "dist/index.js",
