@@ -207,6 +207,15 @@ Auto-starts the Python server if not already running.
 - Recent desktop Chrome (v129+, Prompt API on by default)
 - Python 3.9+
 
+## Publishing
+
+```bash
+npm run build
+npm publish --otp <code>
+```
+
+The account has 2FA enabled, so publishing requires a one-time password from your authenticator app.
+
 ## Also a Pi Skill
 
 [SKILL.md](SKILL.md) — installable via `skills.sh install donpark/chrome-ai` for use with Pi coding agent.
