@@ -216,6 +216,27 @@ npm publish --otp <code>
 
 The account has 2FA enabled, so publishing requires a one-time password from your authenticator app.
 
+## Needle Tool Routing
+
+chrome-ai-tools can train, export, and test [Needle](https://github.com/cactus-compute/needle) models for tool routing —
+a small transformer that maps natural language queries to tool calls, running
+entirely in-browser via the `needle-rs` WASM runtime (~258 KB).
+
+```bash
+# Install Python deps, write tool schemas, generate training data, fine-tune
+pip install -r scripts/requirements.txt
+chrome-ai generate --tools tools.json --output data/needle
+bash scripts/fine-tune.sh
+
+# Test the exported model
+chrome-ai needletest --model output/needle.safetensors
+
+# Compare with Gemini Nano (requires chrome-ai bridge)
+chrome-ai compare --needle-model output/needle.safetensors
+```
+
+See [docs/needle.md](docs/needle.md) for the full guide.
+
 ## Also a Pi Skill
 
 [SKILL.md](SKILL.md) — installable via `skills.sh install donpark/chrome-ai` for use with Pi coding agent.

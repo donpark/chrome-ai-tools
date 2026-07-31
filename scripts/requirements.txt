@@ -1,0 +1,7 @@
+# Needle fine-tuning pipeline
+# Install: pip install -r scripts/requirements.txt
+
+needle @ git+https://github.com/cactus-compute/needle.git
+needle-rs @ git+https://github.com/geekgineer/needle-rs.git
+safetensors
+numpy

@@ -60,16 +60,9 @@ async function waitForResult(id: string, timeoutMs = 120_000): Promise<string> {
 
 // --- Agent Route API ---
 
-export interface ToolDefinition {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-}
+import type { ToolDefinition, ToolRoute } from './src/needle-types.js';
 
-export interface ToolRoute {
-  name: string | null;
-  arguments: Record<string, unknown>;
-}
+export type { ToolDefinition, ToolRoute };
 
 export interface AgentRouteOptions {
   /** Custom system prompt. If omitted, the default compressed DSL prompt is used. */
@@ -117,3 +110,8 @@ export async function write(text: string, context?: string): Promise<string> {
   const id = await submitJob({ api: 'write', text, context: context ?? '' });
   return waitForResult(id);
 }
+
+// --- Needle Training Data Generator ---
+
+export { generateTrainingData } from './src/generate.js';
+

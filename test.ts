@@ -1,5 +1,6 @@
 // Tests for chrome-ai TypeScript client and CLI — no AI model needed.
 
+import type { ToolDefinition } from './src/needle-types.js';
 import { describe, it, afterEach, mock, before } from 'node:test';
 import assert from 'node:assert';
 import { fileURLToPath } from 'node:url';
@@ -153,7 +154,7 @@ describe('agentRoute', () => {
     delete process.env.CHROME_AI_URL;
   });
 
-  const tools = [
+  const tools: ToolDefinition[] = [
     { name: 'summarize_page', description: 'Summarize page text', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } },
     { name: 'lookup_posts', description: 'Find related posts', inputSchema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
   ];

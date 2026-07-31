@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { platform } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -35,7 +36,7 @@ function startServer(): Promise<string> {
       if (line.startsWith('http')) {
         clearTimeout(timer);
         proc.stdout!.destroy();
-        proc.unref(); // let the CLI exit; server keeps running for future calls
+        proc.unref();
         resolve(line);
       }
     });
@@ -70,11 +71,21 @@ function usage(): never {
     '  summarize   Summarize text\n' +
     '  translate   Translate text (requires --from and --to)\n' +
     '  write       Generate or rewrite text\n' +
+    '  generate    Generate Needle training data from tool definitions\n' +
+    '  needletest  Evaluate an exported Needle model on a test set\n' +
+    '  compare     Compare Needle vs Gemini Nano routing accuracy\n' +
     '\n' +
     'Options:\n' +
-    '  --from LANG   Source language (translate, default: en)\n' +
-    '  --to LANG     Target language (translate, required)\n' +
-    '  --context CTX Context for write command\n' +
+    '  --from LANG      Source language (translate, default: en)\n' +
+    '  --to LANG        Target language (translate, required)\n' +
+    '  --context CTX    Context for write command\n' +
+    '  --tools PATH     Path to tool definitions JSON (generate)\n' +
+    '  --output DIR     Output directory (generate, default: data/needle)\n' +
+    '  --count N        Examples per tool (generate, default: 250)\n' +
+    '  --model PATH     Path to exported .safetensors model (needletest)\n' +
+    '  --checkpoint     Path to training .pkl checkpoint (needletest)\n' +
+    '  --needle-model   Path to exported .safetensors model (compare)\n' +
+    '  --test PATH      Path to test.jsonl (needletest/compare, default: data/needle/test.jsonl)\n' +
     '\n' +
     'Pipe text via stdin: cat file.txt | chrome-ai summarize\n',
   );
@@ -85,8 +96,60 @@ async function main() {
   const args = process.argv.slice(2);
   const cmd = args[0];
 
-  if (!cmd || !['prompt', 'summarize', 'translate', 'write'].includes(cmd)) {
+  if (!cmd || !['prompt', 'summarize', 'translate', 'write', 'generate', 'needletest', 'compare'].includes(cmd)) {
     usage();
+  }
+
+  if (cmd === 'needletest') {
+    const { flags, rest } = parseFlags(args.slice(1), ['model', 'checkpoint', 'test']);
+    const testPath = flags['test'] || rest[0] || 'data/needle/test.jsonl';
+    const python = platform() === 'win32' ? 'python' : 'python3';
+    const evalArgs = [join(__dirname, '..', 'scripts', 'eval.py'), '--test', testPath];
+    if (flags['model']) {
+      evalArgs.push('--model', flags['model']);
+    } else if (flags['checkpoint']) {
+      evalArgs.push('--checkpoint', flags['checkpoint']);
+    } else {
+      process.stderr.write('needletest requires --model or --checkpoint\n');
+      process.exit(1);
+    }
+    const proc = spawn(python, evalArgs, { stdio: 'inherit' });
+    proc.on('exit', (code) => process.exit(code ?? 1));
+    return;
+  }
+
+  if (cmd === 'compare') {
+    const { flags, rest } = parseFlags(args.slice(1), ['needle-model', 'test']);
+    if (!flags['needle-model']) {
+      process.stderr.write('compare requires --needle-model <path>\n');
+      process.exit(1);
+    }
+    const python = platform() === 'win32' ? 'python' : 'python3';
+    const compareArgs = [
+      join(__dirname, '..', 'scripts', 'compare.py'),
+      '--needle-model', flags['needle-model'],
+      '--test', flags['test'] || 'data/needle/test.jsonl',
+    ];
+    const proc = spawn(python, compareArgs, { stdio: 'inherit' });
+    proc.on('exit', (code) => process.exit(code ?? 1));
+    return;
+  }
+
+  if (cmd === 'generate') {
+    const { flags, rest } = parseFlags(args.slice(1), ['tools', 'output', 'count', 'mode']);
+    const toolsPath = flags['tools'] || rest[0];
+    if (!toolsPath) {
+      process.stderr.write('generate requires --tools <path> or <path> as argument\n');
+      process.exit(1);
+    }
+    const raw = readFileSync(toolsPath, 'utf-8');
+    const tools = JSON.parse(raw);
+    const { generateTrainingData } = await import('./src/generate.js');
+    await generateTrainingData(tools, {
+      outputDir: flags['output'] || 'data/needle',
+      positivesPerTool: flags['count'] ? parseInt(flags['count'], 10) : undefined,
+    });
+    process.exit(0);
   }
 
   const { flags, rest } = parseFlags(args.slice(1), ['from', 'to', 'context']);
